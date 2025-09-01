@@ -1,1 +1,3 @@
-![alt text](image.png)
+### Условие задачи
+
+![alt text](src/image.png)
