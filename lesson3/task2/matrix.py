@@ -1,5 +1,5 @@
-from .base_array import BaseArray
-from .vector import Vector
+from base_array import BaseArray
+from vector import Vector
 from typing import List, Union, Any, Tuple
 
 
@@ -38,7 +38,7 @@ class Matrix(BaseArray):
             if not all(isinstance(x, (int, float)) for x in row):
                 raise TypeError("Все элементы матрицы должны быть числами")
             
-        super.__init__(data)
+        super().__init__(data)
 
     def __len__(self) -> int:
         """

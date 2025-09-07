@@ -1,4 +1,4 @@
-from .base_array import BaseArray
+from base_array import BaseArray
 from typing import List, Union, Any, Tuple
 
 
@@ -20,7 +20,7 @@ class Vector(BaseArray):
             raise TypeError("Данные должны быть списком")
         if not all(isinstance(x, (int, float)) for x in data):
             raise TypeError("Все эдементы вектра должны быть числами")
-        super.__init__(data)
+        super().__init__(data)
 
     def __len__(self) -> int:
         """
@@ -84,7 +84,7 @@ class Vector(BaseArray):
         :raises TypeError: Если other не Vector
         :raises ValueError: Если длины векторов не совпадают
         """
-        if isinstance(other, Vector):
+        if not isinstance(other, Vector):
             raise TypeError("Можно складывать только с другим Vector")
         if len(self) != len(other):
             raise ValueError("Векторы должны быть одинаковой длины")
