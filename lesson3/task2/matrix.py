@@ -384,4 +384,34 @@ class Matrix(BaseArray):
         else:
             raise TypeError("Должен передаваться список списков")
 
-            
+    def __delitem__(self, index: int) -> None:
+        """
+        Удаление строки матрицы по индексу.
+
+        :param index: Индекс удаляемой строки
+        :raise TypeError: Если переданный индекс не целое число
+        :raise ValueError: Если матрица имеет только одну строку
+        :raise IndexError: Если индекс выходит за границы строк матрицы
+        """
+        if not isinstance(index, int):
+            raise TypeError("Индекс должен быть целым числом")
+        if len(self._data) == 1:
+            raise ValueError("Нельзя удалить единственную строку")
+        del self._data[index]
+
+    def del_coloumn(self, index: int) -> None:
+        """
+        Удаление столбца матрицы по индексу.
+
+        :param index: Индекс удаляемого столбца
+        :raise TypeError: Если переданный индекс не целое число
+        :raise ValueError: Если матрица имеет только один столбец
+        :raise IndexError: Если индекс выходит за границы колон матрицы
+        """
+        if not isinstance(index, int):
+            raise TypeError("Индекс должен быть целым числом")
+        if len(self._data[0]) == 1:
+            raise ValueError("Нельзя удалить единственную строку")
+        for row in self._data:
+            del row[index]
+    
