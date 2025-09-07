@@ -30,6 +30,16 @@ class Vector(BaseArray):
         """
         return len(self._data)
     
+    @property
+    def data(self) -> List[Union[int, float]]:
+        """
+        Возвращает копию данный вектора.
+
+        :return: Список элементов
+        """
+        return self._data.copy()
+    
+
     def __getitem__(self, index: int) -> Union[int, float]:
         """
         Возвращает элемент по индексу.
@@ -52,6 +62,18 @@ class Vector(BaseArray):
         if not isinstance(value, (int, float)):
             raise TypeError("Значение должно быть числом типа int или float")
         self._data[index] = value
+
+    def __delitem__(self, index: int) -> None:
+        """
+        Удаляет элемент по индексу
+
+        :param index: Индекс элемента
+        :raise TypeError: Если индекс не является целым числом
+        :raise IndexError: Если индекс выходит за границы вектора
+        """
+        if not isinstance(index, int):
+            raise TypeError("Индекс должен быть целым числом")
+        del self._data[index]
 
     def __add__(self, other: "Vector") -> "Vector":
         """
@@ -106,9 +128,12 @@ class Vector(BaseArray):
                     "Для скалярного произведения векторы должны быть "
                     "одинаковой длины"
                 )
+            other_list = []
             if isinstance(other, Vector):
-                return sum(a * b for a, b in zip(self._data, other._data))
-            return sum(a * b for a, b in zip(self._data, other))
+                other_list = other._data
+            else:
+                other_list = list(other)
+            return sum(a * b for a, b in zip(self._data, other_list))
         else:
             raise TypeError(
                 "Умножение поддерживается только на число или другой вектор"
