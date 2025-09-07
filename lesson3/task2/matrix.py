@@ -21,14 +21,14 @@ class Matrix(BaseArray):
             или содержат не числа.
         :raises ValueError: Если строки имеют разную длину.
         """
-        if not isinstance(data, list):
+        if not isinstance(data, (list, tuple)):
             raise TypeError("Список должен состоять из списков")
         if len(data) == 0:
             raise ValueError("Матрица не может быть пустой")
         
         count_cols = len(data[0])
         for i, row in enumerate(data):
-            if not isinstance(row, list):
+            if not isinstance(row, (list, tuple)):
                 raise TypeError(f"Строка {i} должна быть списком")
             if len(row) != count_cols:
                 raise ValueError(
@@ -124,7 +124,7 @@ class Matrix(BaseArray):
         """
         if not isinstance(other, Matrix):
             raise TypeError("Можно складывать только с другой Matrix")
-        if self.spape() != other.shape():
+        if self.shape() != other.shape():
             raise ValueError("Матрицы должны быть одинакового размера")
         return Matrix([
             [a + b for a, b in zip(self_row, other_row)]
@@ -293,10 +293,18 @@ class Matrix(BaseArray):
 
         :return: Строка с построчным отображениеим матрицы
         """
-        rows = [
-            "[" + ", ".join(f"{x}" for x in row + "]") for row in self._data
+        str_data = [[str(x) for x in row] for row in self._data]
+        col_widths = [
+            max(len(str_data[i][j]) for i in range(len(str_data)))
+            for j in range(len(str_data[0]))
         ]
-        return "[" + "\n".join(rows) + "]"
+        rows = []
+        for row in str_data:
+            formatted_row = " ".join(
+                element.rjust(col_widths[j]) for j, element in enumerate(row)
+            )
+            rows.append("[" + formatted_row + "]")
+        return "[" + "\n ".join(rows) + "]"
     
     def __contains__(self, item: Any) -> bool:
         """
@@ -318,7 +326,7 @@ class Matrix(BaseArray):
             return False
         return self._data == other._data
     
-    def is_squre(self) -> bool:
+    def is_square(self) -> bool:
         """
         Проверяет, является ли матрица квадратной.
 
@@ -334,9 +342,9 @@ class Matrix(BaseArray):
         :return: Сумма элементов главной диагонали
         :raise VallueError: Если матрица не квадратная
         """
-        if not self.is_squre():
+        if not self.is_square():
             raise ValueError("След определен только для квадратных матриц")
-        return sum(self._data[i][i] for i in range(len(self)))
+        return sum(self._data[i][i] for i in range(len(self._data)))
 
     def append(self, row: List[Union[int, float]]) -> None:
         """
@@ -354,11 +362,13 @@ class Matrix(BaseArray):
                 "Размер добавляемой строки должен соответствовать размеру "
                 "строки матрицы"
             )
-        if all(isinstance(x, (int, float)) for x in row):
+        if not all(isinstance(x, (int, float)) for x in row):
             raise TypeError("Элементы строки должны быть числами")
         self._data.append(row)
 
-    def extend(self, rows: list[list[Union[int, float]]]) -> None:
+    def extend(
+            self, rows: Union["Matrix", list[list[Union[int, float]]]]
+        ) -> None:
         """
         Добавление нескольких строк в конец матрицы.
 
@@ -378,11 +388,17 @@ class Matrix(BaseArray):
                     "Строки в списке должны быть одного размера со "
                     "строками матрицы"
                     )
-            if not all(isinstance(x, (int, float)) for row in rows for x in row):
+            if not all(
+                isinstance(x, (int, float)) for row in rows for x in row
+            ):
                 raise TypeError("Значения в списке списка должны быть числами")
             self._data.extend(rows)
+        elif isinstance(rows, Matrix):
+            if len(self._data[0]) != len(rows[0]):
+                raise ValueError("Строки в матрицах должны быть одного размера")
+            self._data.extend(rows)
         else:
-            raise TypeError("Должен передаваться список списков")
+            raise TypeError("Должен передаваться список списков или матрица")
 
     def __delitem__(self, index: int) -> None:
         """
