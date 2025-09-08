@@ -279,7 +279,7 @@ class Matrix(BaseArray):
         """
         return (len(self._data), len(self._data[0]))
     
-    def transpose(self):
+    def transpose(self) -> "Matrix":
         """
         Возвращает транспонированную матрицу
 
