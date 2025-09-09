@@ -7,7 +7,7 @@
 ![](src/image.png)
 
 1.1
-$$
+```math
 \begin{pmatrix}
     1 & 2 & 4 \\
     7 & 5 & -2 \\
@@ -25,7 +25,7 @@ $$
     9 & -1 & -1 \\
     -9 & 2 & 8 
 \end{pmatrix}
-$$
+```
 1.2
 $$
 \begin{pmatrix}
