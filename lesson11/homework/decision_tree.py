@@ -252,6 +252,8 @@ class DecisionTreeCARD:
         else:
             next_node = self._traverse_tree(sample, right_node)
 
+        return next_node
+
     def predict(self, samples: pd.DataFrame):
         results = samples.apply(self._traverse_tree, args=(self.tree,), axis=1)
 
