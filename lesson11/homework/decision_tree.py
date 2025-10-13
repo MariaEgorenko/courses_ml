@@ -105,7 +105,7 @@ class DecisionTreeCARD:
 
     def _grow_tree(self, X, y, depth=0):
         current_num_samples = y.size
-        X, y = self._set_df_types(X, y, np.float128)
+        X, y = self._set_df_types(X, y, np.longdouble)
         method = self._mse if self.regression else self._gini_impuriry
 
         if any(self._stopping_conditions(y, depth, current_num_samples)):
@@ -136,12 +136,12 @@ class DecisionTreeCARD:
     def _tree_error_rate_info(self, tree, error_rates_list):
         if self._is_leaf_node(tree):
             *_, leaf_error_rate = tree.split()
-            error_rates_list.append(np.float128(leaf_error_rate))
+            error_rates_list.append(np.longdouble(leaf_error_rate))
         else:
             decision_node = next(iter(tree))
             left_subtree, right_subtree = tree[decision_node]
             self._tree_error_rate_info(left_subtree, error_rates_list)
-            self._thre_error_rate_info(right_subtree, error_rates_list)
+            self._tree_error_rate_info(right_subtree, error_rates_list)
 
         RT = sum(error_rates_list)
         num_leaf_nodes = len(error_rates_list)
@@ -160,7 +160,7 @@ class DecisionTreeCARD:
         left_subtree, right_subtree = tree[decision_node]
         *_, decision_node_error_rate = decision_node.split()
 
-        Rt = np.float128(decision_node_error_rate)
+        Rt = np.longdouble(decision_node_error_rate)
         RTt, num_leaf_nodes = self._tree_error_rate_info(tree, [])
         cpp_alpha = self._cppp_alpha_eff(Rt, RTt, num_leaf_nodes)
         decision_node_index, min_cpp_alpha_index = 0, 1
@@ -215,7 +215,7 @@ class DecisionTreeCARD:
     def _cpp_tree_error_rate(self, tree_error_rate, num_leaf_nodes):
         return tree_error_rate + self.ccp_alpha*num_leaf_nodes
     
-    def _optinat_tree(self, X, y):
+    def _optimal_tree(self, X, y):
         tree = self._grow_tree(X, y)
         min_RT_alpha, final_tree = np.inf, None
 
@@ -247,7 +247,7 @@ class DecisionTreeCARD:
         threshold, *_ = other.split()
         feature_value = sample[feature]
 
-        if np.float128(feature_value) <= np.float128(threshold):
+        if np.longdouble(feature_value) <= np.longdouble(threshold):
             next_node = self._traverse_tree(sample, left_node)
         else:
             next_node = self._traverse_tree(sample, right_node)
