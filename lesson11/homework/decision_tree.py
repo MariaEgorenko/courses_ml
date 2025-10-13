@@ -1,260 +1,354 @@
-import pandas as pd
 import numpy as np
-from copy import deepcopy
+from collections import Counter
+from typing import Optional, Tuple, Any, List, Union
 
+class DecisionTree:
+    """
+    Класс дерева решений для задач классификации и регрессии.
 
-class DecisionTreeCARD:
+    Поддерживает как классификацию (по умолчанию), так и регрессию
+    (при установке параметра regression=True). Использует критерий
+    Джини для классификации и среднеквадратичную ошибку (MSE) для
+    регрессии.
+    
+    Attr:
+        max_depth (int): Максимальная глубина дерева. По умолчанию 10.
+        min_samples_split (int): Минимальное количество образцов,
+            необходимое для разделения узла. По умолчанию 2.
+        min_samples_leaf (int): Минимальное количество образцов, которое
+            должно быть в листе. По умолчанию 1.
+        regression (bool): Флаг режима регрессии. Если True — решает
+            задачу регрессии,
+    """
+    def __init__(
+            self,
+            max_depth: int = 10,
+            min_samples_split: int = 2,
+            min_samples_leaf: int = 1,
+            regression: bool = False
+        ) -> None:
+        """
+        Инициализирует дерево решений с заданными гиперпараметрами.
 
-    def __init__(self, max_depth=100, min_samples=2, ccp_alpha=0.0, regression=False):
+        Param:
+            max_depth (int): Максимальная глубина дерева. Дерево
+                перестанет расти, если достигнет этой глубины.
+            min_samples_split (int): Минимальное число объектов в узле,
+                чтобы его можно было разделить.
+            min_samples_leaf (int): Минимальное число объектов, которое
+                должно остаться в каждом дочернем узле после разбиения.
+            regression (bool): Если True — дерево решает задачу регрессии,
+                иначе — классификации.
+        """
         self.max_depth = max_depth
-        self.min_samples = min_samples
-        self.ccp_alpha = ccp_alpha
+        self.min_samples_split = min_samples_split
+        self.min_samples_leaf = min_samples_leaf
         self.regression = regression
-        self.tree = None
-        self._y_type = None
-        self._num_all_samples = None
+        self.root = None
 
-    def _set_df_types(self, X, y, dtype):
-        X = X.astype(dtype)
-        y = y.astype(dtype) if self.regression else y
-        self._y_dtype = y.dtype
+    class Node:
+        """
+        Внутренний класс, представляющий узел дерева решений.
 
-        return X, y
-    
-    @staticmethod
-    def _purity(y):
-        unique_classes = np.unique(y)
+        Attr:
+            feature (int or None): Индекс признака, по которому
+                выполняется разбиение. None для листьев.
+            threshold (float or None): Пороговое значение для
+                разбиения. None для листьев.
+            left (Node or None): Левый дочерний узел.
+            right (Node or None): Правый дочерний узел.
+            value (any or None): Значение прогноза в листе. None для
+                внутренних узлов.
+        """
+        def __init__(
+                self,
+                feature: Optional[int] = None,
+                threshold: Optional[int] = None,
+                left: Optional['DecisionTree.Node'] = None,
+                right: Optional['DecisionTree.Node'] = None,
+                value: Optional[Any] = None
+            ) -> None:
+            """
+            Инициализирует узел дерева.
 
-        return unique_classes.size == 1
-    
-    @staticmethod
-    def _is_leaf_node(node):
-        return not isinstance(node, dict)  # если узел является листом
-    
-    def _leaf_node(self, y):
-        class_index = 0
+            Param:
+                feature (int or None): Индекс признака для разбиения.
+                threshold (float or None): Порог разбиения.
+                left (Node or None): Левый потомок.
+                right (Node or None): Правый потомок.
+                value (any or None): Прогнозируемое значение (только
+                    для листьев).
+            """
+            self.feature = feature
+            self.threshold = threshold
+            self.left = left
+            self.right = right
+            self.value = value
 
-        return np.mean(y) if self.regression else y.mode()[class_index]
-    
-    def _split_df(self, X, y, feature, threshold):
-        feature_values = X[feature]
-        left_indexes = X[feature_values <= threshold].index
-        right_indexes = X[feature_values > threshold].index
-        sizes = np.array([left_indexes.size, right_indexes.size])
+    def fit(
+            self, X: Union[List, np.ndarray], y: Union[List, np.ndarray]
+        ) -> None:
+        """
+        Обучает дерево решений на обучающей выборке.
 
-        return self._leaf_node(y) if any(sizes == 0) else left_indexes, right_indexes
-    
-    @staticmethod
-    def _gini_impuriry(y):
-        _, counts_classes = np.unique(y, return_counts=True)
-        squared_probabilities = np.square(counts_classes / y.size)
-        gini_impurity = 1 - sum(squared_probabilities)
+        Param:
+            X (Union[List, np.ndarray]): Матрица признаков формы (n_samples, n_features).
+            y (Union[List, np.ndarray]): Вектор целевой переменной формы (n_samples,).
+        Returns:
+            None
+        """
+        X = np.array(X)
+        y = np.array(y)
+        self.n_features = X.shape[1]
+        self.root = self._grow_tree(X, y)
 
-        return gini_impurity
-    
-    @staticmethod
-    def _mse(y):
-        mse = np.mean((y - y.mean()) ** 2)
+    def _grow_tree(
+            self, X: np.ndarray, y: np.ndarray, depth: int = 0
+        ) -> 'DecisionTree.Node':
+        """
+        Рекурсивно строит дерево решений.
 
-        return mse
-    
-    @staticmethod
-    def _cost_function(left_df, right_df, method):
-        total_df_size = left_df.size + right_df.size
-        p_left_df = left_df.size / total_df_size
-        p_right_df = right_df.size / total_df_size
-        J_left = method(left_df)
-        J_right = method(right_df)
-        J = p_left_df*J_left + p_right_df*J_right
+        Param:
+            X (np.ndarray): Подвыборка признаков формы (n_samples, n_features).
+            y (np.ndarray): Подвыборка целевых значений формы (n_samples,).
+            depth (int): Текущая глубина узла.
+        Returns:
+            DecisionTree.Node: Построенный узел (внутренний или лист).
+        """
+        n_samples = len(y)
+        if (depth >= self.max_depth or
+            n_samples < self.min_samples_split or
+            len(np.unique(y)) == 1):
+            return self.Node(value=self._calculate_leaf_value(y))
 
-        return J
-    
-    def _node_error_rate(self, y, method):
-        if self._num_all_samples is None:
-            self._num_all_samples = y.size
-        current_num_samples = y.size
-
-        return current_num_samples / self._num_all_samples * method(y)
-    
-    def _best_split(self, X, y):
-        features = X.columns
-        min_count_function = np.inf
-        best_features, best_threshold = None, None
-        method = self._mse if self.regression else self._gini_impuriry
-
-        for feature in features:
-            unique_feature_values = np.unique(X[feature])
-
-            for i in range(1, len(unique_feature_values)):
-                current_value = unique_feature_values[i]
-                previos_value = unique_feature_values[i - 1]
-                threshold = (current_value + previos_value) / 2
-                left_indexes, right_indexes = self._split_df(X, y, feature, threshold)
-                left_labels, right_labels = y.loc[left_indexes], y.loc[right_indexes]
-                current_J = self._cost_function(left_labels, right_labels, method)
-
-                if current_J <= min_count_function:
-                    min_count_function = current_J
-                    best_features = feature
-                    best_threshold = threshold
-
-        return best_features, best_threshold
-    
-    def _stopping_conditions(self, y, depth, n_samples):
-        return self._purity(y), depth == self.max_depth, n_samples < self.min_samples
-
-    def _grow_tree(self, X, y, depth=0):
-        current_num_samples = y.size
-        X, y = self._set_df_types(X, y, np.longdouble)
-        method = self._mse if self.regression else self._gini_impuriry
-
-        if any(self._stopping_conditions(y, depth, current_num_samples)):
-            RTi = self._node_error_rate(y, method)
-            leaf_node = f'{self._leaf_node(y)} | error_rate {RTi}'
-            return leaf_node
-        
-        Rt = self._node_error_rate(y, method)
         best_feature, best_threshold = self._best_split(X, y)
-        decision_node = f'{best_feature} <= {best_threshold} | ' \
-                        f'as_leaf {self._leaf_node(y)} error_rate {Rt}'
-        
-        left_indexes, right_indexes = self._split_df(X, y, best_feature, best_threshold)
-        left_X, right_X = X.loc[left_indexes], X.loc[right_indexes]
-        left_labels, right_labels = y.loc[left_indexes], y.loc[right_indexes]
+        if best_feature is None:
+            return self.Node(value=self._calculate_leaf_value(y))
 
-        tree = {decision_node: []}
-        left_subtree = self._grow_tree(left_X, left_labels, depth + 1)
-        right_subtree = self._grow_tree(right_X, right_labels, depth + 1)
+        left_idxs, right_idxs = self._split(X[:, best_feature], best_threshold)
+        if len(left_idxs) < self.min_samples_leaf or len(right_idxs) < self.min_samples_leaf:
+            return self.Node(value=self._calculate_leaf_value(y))
 
-        if left_subtree == right_subtree:
-            tree = left_subtree
+        left_child = self._grow_tree(X[left_idxs], y[left_idxs], depth + 1)
+        right_child = self._grow_tree(X[right_idxs], y[right_idxs], depth + 1)
+        return self.Node(feature=best_feature, threshold=best_threshold, left=left_child, right=right_child)
+
+    def _best_split(
+            self, X: np.ndarray, y: np.ndarray
+        ) -> Tuple[Optional[int], Optional[float]]:
+        """
+        Находит наилучшее разбиение по всем признакам и порогам.
+
+        Param:
+            X (np.ndarray): Матрица признаков (n_samples, n_features).
+            y (np.ndarray): Целевые значения (n_samples,).
+        Returns:
+            Tuple[Optional[int], Optional[float]]: (индекс_признака, порог). 
+            Если разбиение невозможно — (None, None).
+        """
+        best_gain = -1
+        best_feature, best_threshold = None, None
+
+        for feature in range(self.n_features):
+            values = np.sort(np.unique(X[:, feature]))
+            if len(values) < 2:
+                continue
+            # Пороги между соседними значениями
+            thresholds = (values[:-1] + values[1:]) / 2
+
+            for th in thresholds:
+                gain = self._information_gain(y, X[:, feature], th)
+                if gain > best_gain:
+                    best_gain = gain
+                    best_feature = feature
+                    best_threshold = th
+        return best_feature, best_threshold
+
+    def _impurity(self, y: np.ndarray) -> float:
+        """
+        Вычисляет неоднородность узла.
+
+        Для классификации — индекс Джини.
+        Для регрессии — сумма квадратов отклонений от среднего (RSS).
+
+        Param:
+            y (np.ndarray): Целевые значения (n_samples,).
+        Returns:
+            float: Значение неоднородности.
+        """
+        if len(y) == 0:
+            return 0.0
+        if self.regression:
+            return np.sum((y - y.mean()) ** 2) 
         else:
-            tree[decision_node].extend([left_subtree, right_subtree])
+            # Gini
+            _, counts = np.unique(y, return_counts=True)
+            probs = counts / len(y)
+            return 1 - np.sum(probs ** 2)
 
-        return tree
-    
-    def _tree_error_rate_info(self, tree, error_rates_list):
-        if self._is_leaf_node(tree):
-            *_, leaf_error_rate = tree.split()
-            error_rates_list.append(np.longdouble(leaf_error_rate))
+    def _information_gain(
+            self, y: np.ndarray, X_column: np.ndarray, threshold: float
+        )-> float:
+        """
+        Вычисляет прирост информации от разбиения.
+
+        Param:
+            y (np.ndarray): Целевые значения (n_samples,).
+            X_column (np.ndarray): Значения одного признака (n_samples,).
+            threshold (float): Порог разбиения.
+        Returns:
+            float: Прирост информации. Возвращает 0, если разбиение недопустимо.
+        """
+        parent_imp = self._impurity(y)
+        left_mask = X_column <= threshold
+        right_mask = ~left_mask
+
+        if np.sum(left_mask) == 0 or np.sum(right_mask) == 0:
+            return 0
+
+        imp_left = self._impurity(y[left_mask])
+        imp_right = self._impurity(y[right_mask])
+
+        if self.regression:
+            # Для регрессии: gain = уменьшение суммарной ошибки (RSS)
+            return parent_imp - (imp_left + imp_right)
         else:
-            decision_node = next(iter(tree))
-            left_subtree, right_subtree = tree[decision_node]
-            self._tree_error_rate_info(left_subtree, error_rates_list)
-            self._tree_error_rate_info(right_subtree, error_rates_list)
+            # Для классификации: взвешенная неоднородность
+            n = len(y)
+            n_left, n_right = np.sum(left_mask), np.sum(right_mask)
+            child_imp = (n_left / n) * imp_left + (n_right / n) * imp_right
+            return parent_imp - child_imp
 
-        RT = sum(error_rates_list)
-        num_leaf_nodes = len(error_rates_list)
+    def _gini(self, y: np.ndarray) -> float:
+        """
+        Вычисляет индекс Джини для заданного набора меток.
 
-        return RT, num_leaf_nodes
-    
-    @staticmethod
-    def _cppp_alpha_eff(decision_node_Rt, leaf_nodes_RTt, num_leafs):
-        return (decision_node_Rt - leaf_nodes_RTt) / (num_leafs - 1)
-    
-    def _find_weakest_nodes(self, tree, weakest_node_info):
-        if self._is_leaf_node(tree):
-            return tree
-        
-        decision_node = next(iter(tree))
-        left_subtree, right_subtree = tree[decision_node]
-        *_, decision_node_error_rate = decision_node.split()
+        Param:
+            y (np.ndarray): Массив меток классов.
+        Returns:
+            float: Индекс Джини.
+        """
+        if len(y) == 0:
+            return 0
+        p = np.bincount(y) / len(y)
+        return 1 - np.sum(p ** 2)
 
-        Rt = np.longdouble(decision_node_error_rate)
-        RTt, num_leaf_nodes = self._tree_error_rate_info(tree, [])
-        cpp_alpha = self._cppp_alpha_eff(Rt, RTt, num_leaf_nodes)
-        decision_node_index, min_cpp_alpha_index = 0, 1
+    def _gini_gain(
+            self, y: np.ndarray, X_col: np.ndarray, threshold: float
+        ) -> float:
+        """
+        Вычисляет прирост по индексу Джини (устаревший метод, не используется напрямую).
 
-        if cpp_alpha <= weakest_node_info[min_cpp_alpha_index]:
-            weakest_node_info[decision_node_index] = decision_node
-            weakest_node_info[min_cpp_alpha_index] = cpp_alpha
+        Param:
+            y (np.ndarray): Целевые метки.
+            X_col (np.ndarray): Значения одного признака.
+            threshold (float): Порог разбиения.
+        Returns:
+            float: Прирост Джини.
+        """
+        parent_gini = self._gini(y)
+        left_idxs, right_idxs = self._split(X_col, threshold)
+        if len(left_idxs) == 0 or len(right_idxs) == 0:
+            return 0
+        n = len(y)
+        gini_left = self._gini(y[left_idxs])
+        gini_right = self._gini(y[right_idxs])
+        gain = parent_gini - (len(left_idxs)/n * gini_left + len(right_idxs)/n * gini_right)
+        return gain
 
-        self._find_weakest_nodes(left_subtree, weakest_node_info)
-        self._find_weakest_nodes(right_subtree, weakest_node_info)
+    def _mse(self, y: np.ndarray) -> float:
+        """
+        Вычисляет среднеквадратичную ошибку (MSE) как дисперсию целевой переменной.
 
-        return weakest_node_info
-    
-    def _prune_tree(self, tree, weakest_node):
-        if self._is_leaf_node(tree):
-            return tree
-        
-        decision_node = next(iter(tree))
-        left_subtree, right_subtree = tree[decision_node]
-        left_subtree_index, right_subtree_index = 0, 1
-        _, leaf_node = weakest_node.split('as_leaf')
+        Param:
+            y (np.ndarray): Целевые значения.
+        Returns:
+            float: MSE (дисперсия).
+        """
+        if len(y) == 0:
+            return 0
+        return np.var(y)  # то же, что и np.mean((y - np.mean(y))**2)
 
-        if weakest_node is decision_node:
-            tree = weakest_node
-        if weakest_node in left_subtree:
-            tree[decision_node][left_subtree_index] = leaf_node
-        if weakest_node in right_subtree:
-            tree[decision_node][right_subtree_index] = leaf_node
+    def _mse_reduction(
+            self, y: np.ndarray, X_col: np.ndarray, threshold: float
+            ) -> float:
+        """
+        Вычисляет уменьшение MSE при разбиении (устаревший метод, не используется напрямую).
 
-        self._prune_tree(left_subtree, weakest_node)
-        self._prune_tree(right_subtree, weakest_node)
+        Param:
+            y (np.ndarray): Целевые значения.
+            X_col (np.ndarray): Значения одного признака.
+            threshold (float): Порог разбиения.
+        Returns:
+            float: Уменьшение MSE.
+        """
+        parent_mse = self._mse(y)
+        left_idxs, right_idxs = self._split(X_col, threshold)
+        if len(left_idxs) == 0 or len(right_idxs) == 0:
+            return 0
+        n = len(y)
+        mse_left = self._mse(y[left_idxs])
+        mse_right = self._mse(y[right_idxs])
+        reduction = parent_mse - (
+            len(left_idxs)/n * mse_left + len(right_idxs)/n * mse_right
+        )
+        return reduction
 
-        return tree
-    
-    def cost_complexity_pruning_path(self, X: pd.DataFrame, y: pd.Series):
-        tree = self._grow_tree(X, y)
-        tree_error_rate, _ = self._tree_error_rate_info(tree, [])
-        error_rates = [tree_error_rate]
-        cpp_alpha_list = [0.0]
+    def _split(self, X_col: np.ndarray, threshold: float) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Разделяет индексы по порогу.
 
-        while not self._is_leaf_node(tree):
-            initial_node = [None, np.inf]
-            weakest_node, cpp_alpha = self._find_weakest_nodes(tree, initial_node)
-            tree = self._prune_tree(tree, weakest_node)
-            tree_error_rate, _ = self._tree_error_rate_info(tree, [])
+        Param:
+            X_col (np.ndarray): Значения одного признака (n_samples,).
+            threshold (float): Порог разбиения.
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: (left_idxs, right_idxs) — индексы левой и правой групп.
+        """
+        left_idxs = np.argwhere(X_col <= threshold).flatten()
+        right_idxs = np.argwhere(X_col > threshold).flatten()
+        return left_idxs, right_idxs
 
-            error_rates.append(tree_error_rate)
-            cpp_alpha_list.append(cpp_alpha)
+    def _calculate_leaf_value(self, y: np.ndarray) -> Union[float, int]:
+        """
+        Вычисляет значение листа.
 
-        return np.array(cpp_alpha_list), np.array(error_rates)
-    
-    def _cpp_tree_error_rate(self, tree_error_rate, num_leaf_nodes):
-        return tree_error_rate + self.ccp_alpha*num_leaf_nodes
-    
-    def _optimal_tree(self, X, y):
-        tree = self._grow_tree(X, y)
-        min_RT_alpha, final_tree = np.inf, None
+        Для регрессии — среднее значение.
+        Для классификации — мода (наиболее частый класс).
 
-        while not self._is_leaf_node(tree):
-            RT, num_leaf_nodes = self._tree_error_rate_info(tree, [])
-            current_RT_aplha = self._cpp_tree_error_rate(RT, num_leaf_nodes)
-
-            if current_RT_aplha <= min_RT_alpha:
-                min_RT_alpha = current_RT_aplha
-                final_tree = deepcopy(tree)
-
-            initial_node = [None, np.inf]
-            weakest_node, _ = self._find_weakest_nodes(tree, initial_node)
-            tree = self._prune_tree(tree, weakest_node)
-
-        return final_tree
-    
-    def fit(self, X: pd.DataFrame, y: pd.Series):
-        self.tree = self._optimal_tree(X, y)
-
-    def _traverse_tree(self, sample, tree):
-        if self._is_leaf_node(tree):
-            leaf, _ = tree.split()
-            return leaf
-        
-        decision_node = next(iter(tree))
-        left_node, right_node = tree[decision_node]
-        feature, other = decision_node.split(' <=')
-        threshold, *_ = other.split()
-        feature_value = sample[feature]
-
-        if np.longdouble(feature_value) <= np.longdouble(threshold):
-            next_node = self._traverse_tree(sample, left_node)
+        Param:
+            y (np.ndarray): Целевые значения (n_samples,).
+        Returns:
+            Union[float, int]: Прогнозируемое значение листа.
+        """
+        if self.regression:
+            return np.mean(y)
         else:
-            next_node = self._traverse_tree(sample, right_node)
+            return Counter(y).most_common(1)[0][0]
 
-        return next_node
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """
+        Выполняет предсказание для новых данных.
 
-    def predict(self, samples: pd.DataFrame):
-        results = samples.apply(self._traverse_tree, args=(self.tree,), axis=1)
+        Param:
+            X (np.ndarray): Матрица признаков формы (n_samples, n_features).
+        Returns:
+            np.ndarray: Массив предсказаний формы (n_samples,).
+        """
+        return np.array([self._predict_one(x) for x in X])
 
-        return np.array(results.astype(self._y_dtype))
+    def _predict_one(self, x: np.ndarray) -> Union[float, int]:
+        """
+        Предсказывает значение для одного объекта.
+
+        Param:
+            x (np.ndarray): Вектор признаков одного объекта (n_features,).
+        Returns:
+            Union[float, int]: Прогнозируемое значение.
+        """
+        node = self.root
+        while node.value is None:
+            if x[node.feature] <= node.threshold:
+                node = node.left
+            else:
+                node = node.right
+        return node.value
