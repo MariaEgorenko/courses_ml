@@ -2,3 +2,6 @@ venv
 __pycache__
 venv3.12
 catboost_info
+api_tokens.py
+.neptune
+boston_tuning
