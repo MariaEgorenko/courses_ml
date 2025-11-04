@@ -5,3 +5,10 @@ catboost_info
 api_tokens.py
 .neptune
 boston_tuning
+dataset
+PetImages
+yolov8n.pt
+pedestrian_detector_svm.pkl
+face
+people
+person_dataset
