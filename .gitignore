@@ -8,7 +8,11 @@ boston_tuning
 dataset
 PetImages
 yolov8n.pt
+yolov8s.pt
 pedestrian_detector_svm.pkl
 face
 people
 person_dataset
+orig
+processed
+models
