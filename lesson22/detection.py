@@ -3,6 +3,7 @@ from ultralytics import YOLO
 import torch
 import random
 import dlib
+import numpy as np
 
 point_pairs_pose = [
     (5, 11), (6, 12), # Торс
@@ -46,16 +47,13 @@ def draw_keypoints(frame, keypoints, color=(0, 0, 255)):
     return frame
 
 def face_detected(gray_frame):
-    print('детекция лиц')
     faces = detector(gray_frame)
     if len(faces) < 1:
-        print('лица не найдены')
         return None
-    print(f'количество найденных лиц: {len(faces)}')
+    
     faces_coor = []
     faces_landmarks = []
 
-    print('сохранение координат и лэндмарок')
     for face in faces:
         x, y, w, h = face.left(), face.top(), face.width(), face.height()
         landmarks = predictor(gray_frame, face)
@@ -67,6 +65,26 @@ def face_detected(gray_frame):
         faces_landmarks.append(landmarks)
 
     return faces_coor, faces_landmarks
+
+def euclidean_distance(p1, p2):
+    """Рассчитывает евклидово расстояние между двумя точками dlib"""
+    return np.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2)
+
+def is_smiling(landmarks, threshold=0.6):
+    """
+    Определяет улыбку, нормализуя ширину рта (48, 54)
+    относительно расстояния между внешними уголками глаз (36, 45).
+    """
+    p36 = landmarks.part(36)  # внешний угол левого глаза 
+    p45 = landmarks.part(45)  # внешний угол правого глаза
+    eye_distance = euclidean_distance(p36, p45)
+
+    p48 = landmarks.part(48)  # левый внешний угол губ
+    p54 = landmarks.part(54)  # правый внешний угол губ
+    mouth_width = euclidean_distance(p48, p54)
+
+    ratio = mouth_width / eye_distance
+    return ratio > threshold
 
 def video_tracking(model, source=0, show_video=True, save_video=False, output_video_path="output_video.mp4"):
 
@@ -102,32 +120,29 @@ def video_tracking(model, source=0, show_video=True, save_video=False, output_vi
                 random.seed(int(id))
                 color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
                 
-                print(f'координаты для вырезки изображения: {box[1]}, {box[3]}, {box[0]}, {box[2]}')
-                print(f'размер исходного изображения: {gray_frame.shape}')
-                person_img = gray_frame[box[1]:box[3], box[0]:box[2]]
-                cv2.imshow('frame', person_img)
-                key = cv2.waitKey(0)
+                person_img = gray_frame[box[1]:box[3], box[0]:box[2]].copy()
 
                 face_data = face_detected(person_img)
 
-                cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3],), color, 2)
-                cv2.putText(frame, f"Id {id}", (box[0], box[1]),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2,)
+                # cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3],), color, 2)
+                # cv2.putText(frame, f"Id {id}", (box[0], box[1]),
+                #             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2,)
                 
                 if i < len(keypoints):
                     person_keypoints = keypoints[i]
                     frame = draw_keypoints(frame, person_keypoints, color)
 
                 if face_data is not None:
-                    print('рисование прямоугольника лица')
-                    f_coors, f_landmarks = face_data
-                    for (fx, fy, fw, fh) in f_coors:
+                    face_coors, face_landmarks = face_data
+                    for (x, y, w, h) in face_coors:
                         cv2.rectangle(frame,
-                                        (box[0] + fx, box[1] + fy),
-                                        (box[0] + fx + fw, box[1] + fy + fh),
+                                        (box[0] + x, box[1] + y),
+                                        (box[0] + x + w, box[1] + y + h),
                                         (0, 255, 0), 1)
-        if key == 27:
-            break
+                    if is_smiling(face_landmarks[0]):
+                        cv2.putText(frame, 'Smile', (box[0] + x, box[1] + y + 10), cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.7, (0, 225, 0), 2)
+                    
 
         if save_video:
             out.write(frame)
