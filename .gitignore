@@ -18,3 +18,9 @@ processed
 models
 venv_mediapipe
 runs
+in 
+out
+images
+video
+venv3.11
+open3D
