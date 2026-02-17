@@ -26,3 +26,6 @@ venv3.11
 open3D
 src
 train_fake_news
+datasets
+.env
+data
