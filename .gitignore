@@ -29,3 +29,5 @@ train_fake_news
 datasets
 .env
 data
+spleeter_env
+pretrained_models
